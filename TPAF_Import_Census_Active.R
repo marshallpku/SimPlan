@@ -16,7 +16,7 @@ library(microbenchmark)
 #library(xlsx)
 
 data.path <- paste0(getwd(), '/Data/') 
-data.file <- "TPAF Cenus Data.xlsx"
+data.file <- "TPAF Census Data.xlsx"
 
 options(stringsAsFactors = FALSE)
 
@@ -67,10 +67,10 @@ fill_mean <- function(df, wildth, along = c("col", "row")){
   return(df)
   
 }
-
-fill_mean(df[-1], 5, "col")
-fill_mean(df[-1], 5, "row")
-fill_mean(df[-1], 5, "col") %>% fill_mean(5, "row")
+# 
+# fill_mean(df[-1], 5, "col")
+# fill_mean(df[-1], 5, "row")
+# fill_mean(df[-1], 5, "col") %>% fill_mean(5, "row")
 
 
 
@@ -190,7 +190,8 @@ get_census_fillmean <- function(df.raw){
   
   # Smooth using spline function
   df.salary1 <- splong(df.salary, "age", age_min:age_active_max)
-  
+  df.salary1$year <- 2013
+  df.salary1 <- select(df.salary1, year, everything())
   
   # results
   output <- list(census = df1, salary = df.salary1)
@@ -249,7 +250,7 @@ save(census_ActContMale, census_ActContFemale,
 
 save(salary_ActContMale, salary_ActContFemale, 
      salary_ActNcontMale, salary_ActNcontFemale, 
-     file = paste0(data.path,"census_active.RData"))
+     file = paste0(data.path,"salary13_active.RData"))
 
 
 

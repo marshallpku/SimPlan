@@ -43,7 +43,7 @@ yos_max <- r_max - ea_min # max possible yos
   # Problem: termination rates for age less than 25 are missing from the table. For now, assume they are equal to the rates of age 25
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-##                         Load and organize original data         #######
+##                         Load and reorganize original data         #######
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 termMale1_raw <- read.xls(paste0(data.path, data.file), sheet = "TermMale1", skip = 3, na.strings = "NA", header = TRUE)
@@ -159,9 +159,7 @@ termFemale2_raw <- rbind.fill(list(female.top, termFemale2_raw, female.bottom))
   termMale_rf %>% select(-ea) %>% spread(yos, qxt.rf) # looks fine
   
 
-  
-    
-  
+#### Save results
 save(termMale_AB_rf,   termMale_AB_vest, 
      termFemale_AB_rf, termFemale_AB_vest,
      file = paste0(data.path,"decrement_term.RData"))

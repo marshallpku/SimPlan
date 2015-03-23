@@ -60,7 +60,7 @@ load(paste0(data.path, "/decrement_mort.RData"))
 load(paste0(data.path, "/decrement_disb.RData"))
 load(paste0(data.path, "/decrement_term.RData"))
 load(paste0(data.path, "/decrement_retire.RData"))
-
+load(paste0(data.path, "/census_active.RData"))
 
 ## Create a data frame that contain all possible combinations of start year, ea, age and yos 
 
@@ -79,11 +79,11 @@ AL_retireAB <-
   arrange(start.year, ea, age) %>%
   select(-include) 
 
-#### Try Contributory female first 
+#### Try Ncontributory Female first 
 
 ## Merge salary table and decrement tables 
 
-AL_retireAB_ContFemale <- AL_retireAB %>% 
+AL_retireAB_NcontFemale <- AL_retireAB %>% 
   left_join(SS_ActConFemale %>% select(-growth, -scale, -scale13, -Salary)) %>%
   left_join(mortFemale) %>% 
   left_join(disbFemale) %>% 
@@ -92,9 +92,9 @@ AL_retireAB_ContFemale <- AL_retireAB %>%
   left_join(retireFemale_AB)
 
 na2zero <- function(x){x[is.na(x)] <- 0 ;return(x)}
-AL_retireAB_ContFemale <- colwise(na2zero)(AL_retireAB_ContFemale)
+AL_retireAB_NcontFemale <- colwise(na2zero)(AL_retireAB_NcontFemale)
 
-AL_retireAB_ContFemale %<>%
+AL_retireAB_NcontFemale %<>%
   ungroup %>% # for safety
   group_by(start.year, ea) %>% 
   # Reduction rate 
@@ -107,7 +107,11 @@ AL_retireAB_ContFemale %<>%
          pxm_post_d = 1 - qxm_post_d, # disabled retiree surviving death
          pxT_act    = 1 - qxm_act_o - qxd_o - qxd_a - qxt.rf - qxt.vest - qxr,
          pxT_post_h = pxm_post_h
-  ) %>% 
+  )
+
+
+AL_retireAB_NcontFemale %<>%
+   filter(ea < 80) %>% 
   # Benefits
   mutate(Sx = ifelse(age == min(age), 0, lag(cumsum(sx))), # Cumulative salary
          n  = pmin(yos, fasyears),                         # years used to compute fas
@@ -115,17 +119,77 @@ AL_retireAB_ContFemale %<>%
          fas= ifelse(age == ea, 0, fas),
          Bx = benfactor * yos * fas,                  # accured full retirement benefit. multiplied by gx.r to get actual benefit
          bx = lead(Bx) - Bx, 
-         ax_h = get_tla(pxm_post_h, i)      # Since retiree die at 110 for sure, the life annuity is equivalent to temporary annuity up to age 110. Mortality only
-         # ax80 = c(get_tla(pxT_act[age<80], i), rep(0, 31),
-         # ax80s= c(get_tla(pxT_act[age<80], i, sx[age<80]), rep(0, 31)),
-         # ayx = c(get_tla2(pxT_act[age<=80], i), rep(0, 30))),
-         # ayxs= c(get_tla2(pxT_act[age<=80], i, sx[age<=80]), rep(0,30))
+         ax_h = get_tla(pxm_post_h, i),                                     # Since retiree die at 110 for sure, the life annuity is equivalent to temporary annuity up to age 110. Mortality only
+         ax80 = c(get_tla(pxT_act[age<=80], i), rep(0, 30)),                # PV of of annuity from age x to 80 at age x
+         ax80s= c(get_tla(pxT_act[age<=80], i, sx[age<=80]), rep(0, 30)),
+         ayx = c(get_tla2(pxT_act[age<=81], i), rep(0, 29)),
+         ayxs= c(get_tla2(pxT_act[age<=81], i, sx[age<=81]), rep(0,29))
         )
                       
 
-
-
+# Calculate NC and AL
+tab_AL_retireAB <- AL_retireAB_NcontFemale %>%  
+  mutate(TCx.r = gx.r * Bx * qxr * ax_h,  # term cost of retirement
+         PVFBx.r = c(get_PVFB(pxT_act[age <= 81], v, TCx.r[age <= 81]), rep(0, 29)),
+         # NC and AL of PUC
+         TCx.r1 = gx.r * qxr * ax_h,  # term cost of $1's benefit
+         NCx.PUC = bx * c(get_NC.PUC(pxT_act[age <= 81], v, TCx.r1[age <= 81]), rep(0, 29)),
+         ALx.PUC = Bx * c(get_PVFB(pxT_act[age <= 81], v, TCx.r1[age <= 81]), rep(0, 29)),
+        
+         # NC and AL of EAN.CD
+         NCx.EAN.CD = ifelse(age < 81, PVFBx.r[age == min(age)]/ayx[age == 81], 0),
+         ALx.EAN.CD = PVFBx.r - NCx.EAN.CD * ax80,
+         # NC and AL of EAN.CP
+         NCx.EAN.CP = ifelse(age < 81, sx * PVFBx.r[age == min(age)]/(sx[age == min(age)] * ayxs[age == 81]), 0),
+         ALx.EAN.CP = PVFBx.r - NCx.EAN.CP * ax80s
+  )
                
+
+# Extract information for calculating total AL and NC in 2013
+
+AL.PUC_retireAB13 <- tab_AL_retireAB %>% 
+  ungroup %>% 
+  filter(year == 2013) %>% 
+  select(age, yos, ALx.PUC) %>% 
+  spread(yos, ALx.PUC)
+
+
+# Keep class AB in the census table (hired before 2007 so yos > 6 in 2013)
+census_ActNcontFemale_AB <- census_ActNcontFemale %>% select(-age)
+census_ActNcontFemale_AB[,1:7] <- 0
+
+
+# Taylor the AL table to fit the dimension of census table
+AL.PUC_retireAB13 %<>% filter(age <=69) %>% select(one_of(as.character(0:44)))
+
+
+# Calculate the total AL
+
+(na2zero(census_ActNcontFemale_AB)*na2zero(AL.PUC_retireAB13)) %>% as.matrix %>% sum
+
+
+
+x <- 9701205544 + 
+3099007112 + 
+103369070 +
+343079767
+
+y <-   17347343048 * 1792/1842
+
+x/y
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -30,7 +30,6 @@ source("E:/GitHub/PenSim-Projects/Learn-PenSim/Functions.R")
  # 1. Only retirement annuity can be chosen upon early retirement, refund of member contribution is not allowed for now.
  #    The probability of choosing refund upon early retirement is not given in exp study or AV. We will keep this assumption until
  #    we know how the decision of choosing between annuity and refund are made. (A possible solution: take the max of PV of annuity and refund)
- # 2. 
 
 
 age_min <- 20
@@ -79,11 +78,11 @@ AL_retireAB <-
   arrange(start.year, ea, age) %>%
   select(-include) 
 
-#### Try Ncontributory Female first 
+#### Try Contributory Female first 
 
 ## Merge salary table and decrement tables 
 
-AL_retireAB_NcontFemale <- AL_retireAB %>% 
+AL_retireAB_ContFemale <- AL_retireAB %>% 
   left_join(SS_ActConFemale %>% select(-growth, -scale, -scale13, -Salary)) %>%
   left_join(mortFemale) %>% 
   left_join(disbFemale) %>% 
@@ -92,9 +91,9 @@ AL_retireAB_NcontFemale <- AL_retireAB %>%
   left_join(retireFemale_AB)
 
 na2zero <- function(x){x[is.na(x)] <- 0 ;return(x)}
-AL_retireAB_NcontFemale <- colwise(na2zero)(AL_retireAB_NcontFemale)
+AL_retireAB_ContFemale <- colwise(na2zero)(AL_retireAB_ContFemale)
 
-AL_retireAB_NcontFemale %<>%
+AL_retireAB_ContFemale %<>%
   ungroup %>% # for safety
   group_by(start.year, ea) %>% 
   # Reduction rate 
@@ -110,7 +109,7 @@ AL_retireAB_NcontFemale %<>%
   )
 
 
-AL_retireAB_NcontFemale %<>%
+AL_retireAB_ContFemale %<>%
    filter(ea < 80) %>% 
   # Benefits
   mutate(Sx = ifelse(age == min(age), 0, lag(cumsum(sx))), # Cumulative salary
@@ -128,7 +127,7 @@ AL_retireAB_NcontFemale %<>%
                       
 
 # Calculate NC and AL
-tab_AL_retireAB <- AL_retireAB_NcontFemale %>%  
+tab_AL_retireAB <- AL_retireAB_ContFemale %>%  
   mutate(TCx.r = gx.r * Bx * qxr * ax_h,  # term cost of retirement
          PVFBx.r = c(get_PVFB(pxT_act[age <= 81], v, TCx.r[age <= 81]), rep(0, 29)),
          # NC and AL of PUC
@@ -155,8 +154,8 @@ AL.PUC_retireAB13 <- tab_AL_retireAB %>%
 
 
 # Keep class AB in the census table (hired before 2007 so yos > 6 in 2013)
-census_ActNcontFemale_AB <- census_ActNcontFemale %>% select(-age)
-census_ActNcontFemale_AB[,1:7] <- 0
+census_ActContFemale_AB <- census_ActContFemale %>% select(-age)
+census_ActContFemale_AB[,1:7] <- 0
 
 
 # Taylor the AL table to fit the dimension of census table
@@ -165,49 +164,17 @@ AL.PUC_retireAB13 %<>% filter(age <=69) %>% select(one_of(as.character(0:44)))
 
 # Calculate the total AL
 
-(na2zero(census_ActNcontFemale_AB)*na2zero(AL.PUC_retireAB13)) %>% as.matrix %>% sum
+(na2zero(census_ActContFemale_AB)*na2zero(AL.PUC_retireAB13)) %>% as.matrix %>% sum
+
+# Class A/B service retirement AL
+9701205544 + # contributory Female
+3099007112 + # contributory Female
+103369070 +  # noContributory Female 
+343079767    # noContributory Female
+# Total:13246661493  (13.2b)
 
 
-
-x <- 9701205544 + 
-3099007112 + 
-103369070 +
-343079767
-
-y <-   17347343048 * 1792/1842
-
-x/y
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Total Service Retirement AL: 17347343048 (17.3b)
 
 
 

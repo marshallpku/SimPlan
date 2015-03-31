@@ -15,6 +15,8 @@ library(tidyr) # gather, spread
 library(microbenchmark)
 #library(xlsx)
 
+source("E:/GitHub/PenSim-Projects/Learn-PenSim/Functions.R")
+
 data.path <- paste0(getwd(), '/Data/') 
 data.file <- "TPAF ES2012 Assumptions.xlsx"
 
@@ -45,6 +47,13 @@ yos_max <- r_max - ea_min # max possible yos
  # scales for yos > 40 are missing, for now we assume the scales are the same as yos 40.  
  # scales before 2009 are missing, for now we assume the scales are the same as those in 2009.
 
+
+#****************************************************************************
+#
+#                           Creat salary scale ####
+#
+#****************************************************************************
+
 salaryScale_raw <- read.xls(paste0(data.path, data.file), sheet = "Salary Growth", skip = 3, na.strings = "NA", header = TRUE)
 salaryScale_append <- data.frame(yos = 41:61,
                                  matrix(salaryScale_raw[salaryScale_raw$yos == 40, -1] %>% as.numeric, 21, 8, byrow = T))
@@ -69,9 +78,57 @@ salaryScale <- mutate(salaryScale, yos = 0:61) %>%
 
 
 
+#****************************************************************************
+#
+#                   Imputation of salary along yos ####
+#
+#****************************************************************************
 
-## Create a complete salary scale
 
+# assume the salary scale across yos 0-44 is proportional ot the salary scale across age 20-64. 
+# We impute the average salary of each combination of age and yos, maintaining the average annual salary by age
+# given in AV 2013.
+
+load("Data/census_active.RData")
+load("Data/salary13_active.RData")
+
+get_salary <- function(census_data, salary_data){
+# function "splong" must be loaded  
+  
+W <- census_data %>% select(-age) %>% as.matrix
+S13.yos <- salary_data[1:ncol(W),"Salary"]
+S13.age <- salary_data[1:nrow(W),"Salary"]
+
+A <- (S13.age*rowSums(W)) / (W %*% S13.yos) # adjustment factor
+Salary <- A %x% t(salary_data$Salary) # salary matrix
+
+# check the correctness
+(rowSums(W * Salary[,1:ncol(W)]) / rowSums(W) -  S13.age) %>% sum %>% print # error is acceptable
+
+# Convert to long form
+Salary <-  data.frame(age = census_data$age, Salary) 
+colnames(Salary) <- c("age", 0:(yos_max - 1))  
+Salary %<>% gather(yos, Salary, -age) 
+Salary <-  splong(Salary, "age", 1:80) %>% 
+  mutate(year = 2013,
+         yos = levels(yos)[yos] %>% as.numeric) %>% 
+  filter(age - yos >= 20)
+
+return(Salary)
+}
+
+salary_ActContFemale <- get_salary(census_ActContFemale, salary_ActContFemale)
+salary_ActContMale   <- get_salary(census_ActContMale, salary_ActContMale)
+salary_ActNcontFemale <- get_salary(census_ActNcontFemale, salary_ActNcontFemale)
+salary_ActNcontMale   <- get_salary(census_ActNcontMale, salary_ActNcontMale)
+
+
+
+#**********************************************************************
+#
+#                  Create a complete salary scale ####
+#
+#**********************************************************************
 SS <- expand.grid(start.year = 1953:2013, ea = age_min:age_active_max, age = age_min:age_active_max) %>%
   mutate(yos  = age - ea,
          year = start.year + yos,
@@ -89,8 +146,6 @@ SS$growth %>% is.na %>% sum # check if all cells are filled
 
 
 # load 2013 salary
-
-load(paste0(getwd(), "/Data/salary13_active.RData"))
 
 SS_ActConMale <- SS %>% left_join(salary_ActContMale) %>% 
   mutate(sx = scale13 * Salary[year == 2013])
@@ -117,3 +172,14 @@ save(SS_ActConMale, SS_ActConFemale, SS_ActNconMale, SS_ActNconFemale,
 
 
 
+# 
+# # Knonecker product
+# # a <- 1:4
+# # b <- c(2,2,2,2)
+# # t(a) %x% b
+# # a %x% t(b)
+# 
+# dim(W)
+# 
+# S13.age
+# S13.yos

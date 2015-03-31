@@ -4,6 +4,7 @@
 
 
 ## Preamble ##################################################################################################
+rm(list = ls())
 
 library(knitr)
 library(gdata) # read.xls
@@ -15,7 +16,7 @@ library(tidyr) # gather, spread
 library(microbenchmark)
 #library(xlsx)
 
-data.path <- paste0(getwd(), '/Data/') 
+data.path <- "Data" 
 data.file <- "TPAF ES2012 Assumptions.xlsx"
 
 options(stringsAsFactors = FALSE)
@@ -67,7 +68,34 @@ load(paste0(data.path, "/census_active.RData"))
  # The minimum year needed: 2013 - 61 + 1 = 1953, a 1953 entrant at age 20 will reach the max yos=61 (20 ~ 80) in 2013.
  # The maximum yos needed:  61
 
+# input data
 
+SS        <- SS_ActConMale
+census    <- census_ActContMale
+
+mort        <- mortMale
+disb        <- disbMale
+term_AB_rf  <- termMale_AB_rf
+term_AB_vest<- termMale_AB_vest
+retire_AB   <- retireMale_AB
+
+get_AL_PUC_AB <- function(SS, census,
+                          mort, 
+                          disb,        
+                          term_AB_rf,  
+                          term_AB_vest,
+                          retire_AB){
+
+#   SS        <- SS_ActConMale
+#   census    <- census_ActContMale
+#   
+#   mort        <- mortMale
+#   disb        <- disbMale
+#   term_AB_rf  <- termMale_AB_rf
+#   term_AB_vest<- termMale_AB_vest
+#   retire_AB   <- retireMale_AB  
+#   
+  
 AL_retireAB <- 
   expand.grid(start.year = 1953:2013, ea = age_min:age_active_max, age = age_min:age_max) %>%
   mutate(yos  = age - ea,
@@ -82,18 +110,18 @@ AL_retireAB <-
 
 ## Merge salary table and decrement tables 
 
-AL_retireAB_ContFemale <- AL_retireAB %>% 
-  left_join(SS_ActConFemale %>% select(-growth, -scale, -scale13, -Salary)) %>%
-  left_join(mortFemale) %>% 
-  left_join(disbFemale) %>% 
-  left_join(termFemale_AB_rf) %>% 
-  left_join(termFemale_AB_vest) %>% 
-  left_join(retireFemale_AB)
+AL_retireAB %<>% 
+  left_join(SS %>% select(-growth, -scale, -scale13, -Salary)) %>%
+  left_join(mort) %>% 
+  left_join(disb) %>% 
+  left_join(term_AB_rf) %>% 
+  left_join(term_AB_vest) %>% 
+  left_join(retire_AB)
 
 na2zero <- function(x){x[is.na(x)] <- 0 ;return(x)}
-AL_retireAB_ContFemale <- colwise(na2zero)(AL_retireAB_ContFemale)
+AL_retireAB<- colwise(na2zero)(AL_retireAB)
 
-AL_retireAB_ContFemale %<>%
+AL_retireAB %<>%
   ungroup %>% # for safety
   group_by(start.year, ea) %>% 
   # Reduction rate 
@@ -109,7 +137,7 @@ AL_retireAB_ContFemale %<>%
   )
 
 
-AL_retireAB_ContFemale %<>%
+AL_retireAB %<>%
    filter(ea < 80) %>% 
   # Benefits
   mutate(Sx = ifelse(age == min(age), 0, lag(cumsum(sx))), # Cumulative salary
@@ -127,7 +155,7 @@ AL_retireAB_ContFemale %<>%
                       
 
 # Calculate NC and AL
-tab_AL_retireAB <- AL_retireAB_ContFemale %>%  
+tab_AL_retireAB <- AL_retireAB %>%  
   mutate(TCx.r = gx.r * Bx * qxr * ax_h,  # term cost of retirement
          PVFBx.r = c(get_PVFB(pxT_act[age <= 81], v, TCx.r[age <= 81]), rep(0, 29)),
          # NC and AL of PUC
@@ -154,9 +182,8 @@ AL.PUC_retireAB13 <- tab_AL_retireAB %>%
 
 
 # Keep class AB in the census table (hired before 2007 so yos > 6 in 2013)
-census_ActContFemale_AB <- census_ActContFemale %>% select(-age)
-census_ActContFemale_AB[,1:7] <- 0
-
+census_AB <- census %>% select(-age)
+census_AB[,1:7] <- 0
 
 # Taylor the AL table to fit the dimension of census table
 AL.PUC_retireAB13 %<>% filter(age <=69) %>% select(one_of(as.character(0:44)))
@@ -164,17 +191,52 @@ AL.PUC_retireAB13 %<>% filter(age <=69) %>% select(one_of(as.character(0:44)))
 
 # Calculate the total AL
 
-(na2zero(census_ActContFemale_AB)*na2zero(AL.PUC_retireAB13)) %>% as.matrix %>% sum
+tot_AL.PUC.AB <- (na2zero(census_AB)*na2zero(AL.PUC_retireAB13)) %>% as.matrix %>% sum
+return(tot_AL.PUC.AB)
+}
+
+
+AL.ConFemale <- get_AL_PUC_AB(SS_ActConFemale, census_ActContFemale,
+              mortFemale, disbFemale, termFemale_AB_rf, termFemale_AB_vest, retireFemale_AB)
+
+AL.ConMale <- get_AL_PUC_AB(SS_ActConMale, census_ActContMale,
+              mortMale, disbMale, termMale_AB_rf, termMale_AB_vest, retireMale_AB)
+
+AL.NconFemale <- get_AL_PUC_AB(SS_ActNconFemale, census_ActNcontFemale,
+              mortFemale, disbFemale, termFemale_AB_rf, termFemale_AB_vest, retireFemale_AB)
+
+AL.NconMale <- get_AL_PUC_AB(SS_ActNconMale, census_ActNcontMale,
+              mortMale, disbMale, termMale_AB_rf, termMale_AB_vest, retireMale_AB)
+
+AL.tot <- AL.ConFemale + AL.ConMale + AL.NconFemale + AL.NconMale
+
+AL.ConFemale
+AL.ConMale
+AL.NconFemale
+AL.NconMale
+AL.tot
+
+
+
+
+## Target:
+ # Total Service Retirement AL: 17347343048 (17.3b)
 
 # Class A/B service retirement AL
-9701205544 + # contributory Female
-3099007112 + # contributory Female
-103369070 +  # noContributory Female 
-343079767    # noContributory Female
+# 9701205544 + # contributory Female
+# 3099007112 + # contributory Male
+# 103369070 +  # noContributory Male 
+# 343079767    # noContributory Female
 # Total:13246661493  (13.2b)
 
 
-# Total Service Retirement AL: 17347343048 (17.3b)
-
+# 3/31 Imputing salary across yos
+10484627415 +  # Con Female
+3438982024  +  # Con Male
+235893774   +  # Ncon Female
+72289947       # Ncon Male   
+# Total:14231793160  (14.2b)
+# ALs of contributory members increase while ALs of noncontributory members decrease  
+# Total AL increases by about 1 billion. 
 
 

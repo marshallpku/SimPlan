@@ -85,27 +85,38 @@ salaryScale <- mutate(salaryScale, yos = 0:61) %>%
 #****************************************************************************
 
 
-# assume the salary scale across yos 0-44 is proportional ot the salary scale across age 20-64. 
-# We impute the average salary of each combination of age and yos, maintaining the average annual salary by age
-# given in AV 2013.
+# Assume the salary scale across yos 0-44 is proportional to the salary scale across age 20-64. 
+# We impute the average salary of each combination of age and yos, maintaining the average annual salary by age.
 
 load("Data/census_active.RData")
 load("Data/salary13_active.RData")
 
 get_salary <- function(census_data, salary_data){
-# function "splong" must be loaded  
+
+# function "splong" from Functions.R must be loaded  
   
-W <- census_data %>% select(-age) %>% as.matrix
-S13.yos <- salary_data[1:ncol(W),"Salary"]
-S13.age <- salary_data[1:nrow(W),"Salary"]
+W <- census_data %>% select(-age) %>% as.matrix # Census matrix: age(20~69) by yos(0~44)
+S13.yos <- salary_data[1:ncol(W),"Salary"]      # Extract the salary for age 20~64, to match yos 0~44
+S13.age <- salary_data[1:nrow(W),"Salary"]      # salary for age 20~69
 
+
+# Since we assume salary scale across yos is proportional to salary scale across age, we need a factor to construct 
+# salary along yos for each age. Let's define the vector of the factors as "A"(dim = 50, for age 20~69). We need to 
+# solve for A, subject to that at each age x, the total salary computed from the average salary of age x is equal to 
+# the total salary computed using the imputed salary across yos at age x. This constraint can be written as
+# A*(W %*% S13.yos) = (S13.age*rowSums(W)). 
+
+# Solve for vector A:
 A <- (S13.age*rowSums(W)) / (W %*% S13.yos) # adjustment factor
-Salary <- A %x% t(salary_data$Salary) # salary matrix
+# Calculate salary across yos for each age using A
+# Note the use of knonecker product %x%: ith row in Salary is calculated as A[i] mulitplied by the row vector t(salary_data$Salary).
+Salary <- A %x% t(salary_data$Salary) # salary matrix: age(20~64) by yos (0~60)
 
-# check the correctness
+
+## Check the correctness
 (rowSums(W * Salary[,1:ncol(W)]) / rowSums(W) -  S13.age) %>% sum %>% print # error is acceptable
 
-# Convert to long form
+# Convert to long form and extend the age span to 80(max age for actives) using spline smoothing function "splong".
 Salary <-  data.frame(age = census_data$age, Salary) 
 colnames(Salary) <- c("age", 0:(yos_max - 1))  
 Salary %<>% gather(yos, Salary, -age) 
@@ -121,6 +132,65 @@ salary_ActContFemale <- get_salary(census_ActContFemale, salary_ActContFemale)
 salary_ActContMale   <- get_salary(census_ActContMale, salary_ActContMale)
 salary_ActNcontFemale <- get_salary(census_ActNcontFemale, salary_ActNcontFemale)
 salary_ActNcontMale   <- get_salary(census_ActNcontMale, salary_ActNcontMale)
+
+
+
+## Check consistency with AV
+
+check_results <- function(df_salary, df_census){
+  
+na2zero <- function(x){x[is.na(x)] <- 0 ;return(x)}
+
+df <- df_salary %>% 
+     left_join(df_census %>% gather(yos, Pop, -age) %>% mutate(yos=as.numeric(levels(yos)[yos]))) %>% 
+     mutate(ea = age - yos) %>% 
+     na2zero() 
+
+value.avg <- c(age.avg =    weighted.mean(df$age,    w = df$Pop),
+               yos.avg =    weighted.mean(df$yos,    w = df$Pop),
+               ea.avg  =    weighted.mean(df$ea,     w = df$Pop),
+               Salary.avg = weighted.mean(df$Salary, w = df$Pop))
+
+payroll <- sum(df$Salary * df$Pop)
+
+df_group <- df %>% 
+  mutate(group = trunc(age/5)*5,
+         Salary.sum = Salary * Pop) %>% 
+  group_by(group) %>% 
+  summarise_each(funs(sum), Salary.sum, Pop) %>% 
+  mutate(Salary.ageAvg = Salary.sum/Pop) %>% 
+  filter(group <=65) %>% 
+  select(group, Pop, Salary.ageAvg)
+
+return(list(value.avg = value.avg, df_group = df_group, payroll = payroll))
+}
+
+(check_ContFemale  <- check_results(salary_ActContFemale, census_ActContFemale))
+(check_ContMale    <- check_results(salary_ActContMale, census_ActContMale))
+(check_NcontFemale <- check_results(salary_ActNcontFemale, census_ActNcontFemale))
+(check_NcontMale   <- check_results(salary_ActNcontMale, census_ActNcontMale))
+# Summary statistics and average salary are quite close to the original values on AV page 49~50
+
+(payroll.tot <- check_ContFemale$payroll  + check_ContMale$payroll +
+               check_NcontFemale$payroll +  check_NcontMale$payroll) #10.715b
+# total payroll is greater than the total "Appropriation Salary" of class AB on page 33 (8.236b)
+
+# To further check it, we calculate total salary using original census data on AV p49~50
+ContFemale.raw <- read.xls("Data/TPAF Census Data.xlsx", sheet = "ActContFemale", skip = 1, na.strings = "NA", header = TRUE)
+ContMale.raw <- read.xls("Data/TPAF Census Data.xlsx", sheet = "ActContMale", skip = 1, na.strings = "NA", header = TRUE)
+NcontFemale.raw <- read.xls("Data/TPAF Census Data.xlsx", sheet = "ActNcontFemale", skip = 1, na.strings = "NA", header = TRUE)
+NcontMale.raw <- read.xls("Data/TPAF Census Data.xlsx", sheet = "ActNcontMale", skip = 1, na.strings = "NA", header = TRUE)
+
+(payroll.original <- 
+  sum(as.numeric(ContFemale.raw[-12,11] * ContFemale.raw[-12,12])) + 
+  sum(as.numeric(ContMale.raw[-12,11]   * ContMale.raw[-12,12])) +
+  sum(as.numeric(NcontFemale.raw[-12,11]* NcontFemale.raw[-12,12])) +
+  sum(as.numeric(NcontMale.raw[-12,11]  * NcontMale.raw[-12,12]))
+)
+# The total salary computed from page AV p49 - 50 is 10.708b. It is very close to the value from the imputed table (10.715b),
+# but far from the "Appropriation Salary" on page 33.
+# This outcome raises the question of how "Appropriation Salary" is defined and why it is much less than the sum of salary.  
+
 
 
 

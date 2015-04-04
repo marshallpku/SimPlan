@@ -160,9 +160,14 @@ tab_AL_retireAB <- AL_retireAB %>%
          PVFBx.r = c(get_PVFB(pxT_act[age <= 81], v, TCx.r[age <= 81]), rep(0, 29)),
          # NC and AL of PUC
          TCx.r1 = gx.r * qxr * ax_h,  # term cost of $1's benefit
-         NCx.PUC = bx * c(get_NC.PUC(pxT_act[age <= 81], v, TCx.r1[age <= 81]), rep(0, 29)),
-         ALx.PUC = Bx * c(get_PVFB(pxT_act[age <= 81], v, TCx.r1[age <= 81]), rep(0, 29)),
+         NCx.UC = bx * c(get_NC.UC(pxT_act[age <= 81], v, TCx.r1[age <= 81]), rep(0, 29)),
+         ALx.UC = Bx * c(get_PVFB(pxT_act[age <= 81], v, TCx.r1[age <= 81]), rep(0, 29)),
         
+         # NC and AL of PUC
+         TCx.rPUC = ifelse(age == min(age), 0, (Bx / (age - min(age)) * gx.r * qxr * ax_h)) , 
+         NCx.PUC = c(get_NC.UC(pxT_act[age <= 81], v, TCx.rPUC[age <= 81]), rep(0, 29)),
+         ALx.PUC = c(get_AL.PUC(pxT_act[age <= 81], v, TCx.rPUC[age <= 81]), rep(0, 29)),
+         
          # NC and AL of EAN.CD
          NCx.EAN.CD = ifelse(age < 81, PVFBx.r[age == min(age)]/ayx[age == 81], 0),
          ALx.EAN.CD = PVFBx.r - NCx.EAN.CD * ax80,
@@ -221,6 +226,7 @@ AL.tot
 
 ## Target:
  # Total Service Retirement AL: 17347343048 (17.3b)
+17347343048 * 0.973
 
 # Class A/B service retirement AL
 # 9701205544 + # contributory Female
@@ -238,5 +244,17 @@ AL.tot
 # Total:14231793160  (14.2b)
 # ALs of contributory members increase while ALs of noncontributory members decrease  
 # Total AL increases by about 1 billion. 
+
+# 4/2 Correctd the actuarial method: UC -> PUC
+12472208754 + # AL.ConFemale
+4095814504 +  # AL.ConMale
+346255974 +   # AL.NconFemale
+93103870      # AL.NconMale
+# Total 17007383102
+
+
+
+
+
 
 

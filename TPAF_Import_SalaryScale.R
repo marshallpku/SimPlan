@@ -12,7 +12,6 @@ library(dplyr)
 library(ggplot2)
 library(magrittr)
 library(tidyr) # gather, spread
-library(microbenchmark)
 #library(xlsx)
 
 source("E:/GitHub/PenSim-Projects/Learn-PenSim/Functions.R")
@@ -92,9 +91,11 @@ load("Data/census_active.RData")
 load("Data/salary13_active.RData")
 
 get_salary <- function(census_data, salary_data){
-
 # function "splong" from Functions.R must be loaded  
-  
+# load("Data/salary13_active.RData")
+# census_data <- census_ActContFemale
+# salary_data <- salary_ActContFemale
+    
 W <- census_data %>% select(-age) %>% as.matrix # Census matrix: age(20~69) by yos(0~44)
 S13.yos <- salary_data[1:ncol(W),"Salary"]      # Extract the salary for age 20~64, to match yos 0~44
 S13.age <- salary_data[1:nrow(W),"Salary"]      # salary for age 20~69
@@ -108,6 +109,7 @@ S13.age <- salary_data[1:nrow(W),"Salary"]      # salary for age 20~69
 
 # Solve for vector A:
 A <- (S13.age*rowSums(W)) / (W %*% S13.yos) # adjustment factor
+plot(A, type = "b")
 # Calculate salary across yos for each age using A
 # Note the use of knonecker product %x%: ith row in Salary is calculated as A[i] mulitplied by the row vector t(salary_data$Salary).
 Salary <- A %x% t(salary_data$Salary) # salary matrix: age(20~64) by yos (0~60)
@@ -128,12 +130,10 @@ Salary <-  splong(Salary, "age", 1:80) %>%
 return(Salary)
 }
 
-salary_ActContFemale <- get_salary(census_ActContFemale, salary_ActContFemale)
-salary_ActContMale   <- get_salary(census_ActContMale, salary_ActContMale)
+salary_ActContFemale  <- get_salary(census_ActContFemale, salary_ActContFemale)
+salary_ActContMale    <- get_salary(census_ActContMale, salary_ActContMale)
 salary_ActNcontFemale <- get_salary(census_ActNcontFemale, salary_ActNcontFemale)
 salary_ActNcontMale   <- get_salary(census_ActNcontMale, salary_ActNcontMale)
-
-
 
 ## Check consistency with AV
 
@@ -173,7 +173,7 @@ return(list(value.avg = value.avg, df_group = df_group, payroll = payroll))
 
 (payroll.tot <- check_ContFemale$payroll  + check_ContMale$payroll +
                check_NcontFemale$payroll +  check_NcontMale$payroll) #10.715b
-# total payroll is greater than the total "Appropriation Salary" of class AB on page 33 (8.236b)
+# total payroll is slightly greater (about 6%) than the total "Appropriation Salary" on page 33 (10.04b)
 
 # To further check it, we calculate total salary using original census data on AV p49~50
 ContFemale.raw <- read.xls("Data/TPAF Census Data.xlsx", sheet = "ActContFemale", skip = 1, na.strings = "NA", header = TRUE)
@@ -183,13 +183,44 @@ NcontMale.raw <- read.xls("Data/TPAF Census Data.xlsx", sheet = "ActNcontMale", 
 
 (payroll.original <- 
   sum(as.numeric(ContFemale.raw[-12,11] * ContFemale.raw[-12,12])) + 
-  sum(as.numeric(ContMale.raw[-12,11]   * ContMale.raw[-12,12])) +
+  sum(as.numeric(ContMale.raw[-12,11]   * ContMale.raw[-12,12]))) +
   sum(as.numeric(NcontFemale.raw[-12,11]* NcontFemale.raw[-12,12])) +
   sum(as.numeric(NcontMale.raw[-12,11]  * NcontMale.raw[-12,12]))
 )
 # The total salary computed from page AV p49 - 50 is 10.708b. It is very close to the value from the imputed table (10.715b),
-# but far from the "Appropriation Salary" on page 33.
-# This outcome raises the question of how "Appropriation Salary" is defined and why it is much less than the sum of salary.  
+# but also a little bigger than the "Appropriation Salary" on page 33.
+# This outcome raises the question of how "Appropriation Salary" is defined and why it is little less than the sum of salary.  
+
+
+## Explore issues raised by Don in 4/4/2015 email. 
+# The sawtooth along age within a yos group 
+load("Data/salary13_active.RData")
+salary_ActContFemale %>% qplot(age, Salary, data =., geom = c("point", "line"))
+salary_ActContMale %>% qplot(age, Salary, data =., geom = c("point", "line"))
+# This is caused by the "sawtooth" pattern in imputed census tables. As a result of the native imputation method
+# applied to the census data, the imputed census tables consist of a lot of 5x5 blocks, within whitch the number of 
+# member is same in all cells. When imputing salary along yos in a age group, the current method requires the weighted
+# aveage salary, with the population in yos groups being the weight, matches the actual average salary of that age group.
+# Since there are "jumps" in weights of yos very 5 years along the age dimension, we get the resulting sawtooth pattern 
+# in salary along age, with the "teeth" appearing very 5 years. So this is actually a problem caused by the naive (block-wise) 
+# imputation of census table, if we use a more smoothed census table, I believe the the sawtooth will disappear. 
+
+
+## The hump-shaped pattern along yos for non-contributory groups. 
+#  This is the consequence of assuming salary scale along yos is proportional to the scale along age. You can see
+#  on page 50 that the noncontributory members' average salary are hump-shaped, with the peak in age group 50-54 and 
+#  35-39 for male and female respectively, therefore the resulting salary along yos have the same shape. 
+#  Of course, the logic behind the hump-shaped pattern along age, whatever it is, in the noncontributory types cannot be applied
+#  to the pattern along yos. 
+
+ 
+## Difference in salary "growth" across types and the imputation method you suggested.
+#  Actually I started with the method you suggested in the second email but soon realized that the problem is
+#  more compliated than I thought. In my opinion the the salary "growth" calculated by the second chunk
+#  your code cannot be interpreted as growth rate, and it may not be appropriate to use the salary scale of 2013
+#  to impute salary across yos within a age group. It is hard to clearly exlain this in a short email, I will write
+#  down my thought and reasoning on this issue so we can have a more efficient discussion about it later.   
+
 
 
 

@@ -15,7 +15,7 @@ library(tidyr) # gather, spread
 library(microbenchmark)
 #library(xlsx)
 
-data.path <- paste0(getwd(), '/Data/') 
+data.path <- paste0('./Data/') 
 data.file <- "TPAF Census Data.xlsx"
 
 options(stringsAsFactors = FALSE)
@@ -112,6 +112,8 @@ df <- df.raw %>%  select(-age, -Total, - Salary)
 df <- df[-c(1, nrow(df)),] 
 
 get_mat <- function(df, col, start, span_age = 5, span_yos = 5){
+  # Expand a single column of the grouped data using a simple method: evenly spread over allowable cells
+  
   # span_age <- 5
   # span_yos <- 5
   # start <- 2
